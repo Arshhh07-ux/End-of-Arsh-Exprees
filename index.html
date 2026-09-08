@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Anant Express: 4D Horror</title>
+    <title>Anant Express - 3D Browser Horror</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
@@ -13,41 +13,32 @@
 
     <div id="hud">
         COACH: <span id="car-number">S-1</span> / S-8<br>
-        <span id="anomaly-detector">TEMPORAL SHIFT: STABLE</span><br>
-        <small style="font-size: 11px; color: #888;">[F] Flashlight | [WASD] Move | [Mouse] Look</small>
-    </div>
-
-    <div id="interaction-prompt">Press [E] to Inspect Note</div>
-
-    <div id="note-modal">
-        <div id="note-content">
-            <h3>LOG ENTRY</h3>
-            <p id="note-text">The train coaches repeat in a 4D loop...</p>
-            <small style="color: #888;">Press [E] or Click to Close</small>
-        </div>
+        SYSTEM: <span id="anomaly-status">STABLE</span><br>
+        <small>[WASD] Move | [Mouse] Look | [F] Flashlight</small>
     </div>
 
     <div id="instructions">
-        <h1>ANANT EXPRESS: 4D</h1>
-        <p>You are trapped in a non-Euclidean night train.</p>
+        <h1>ANANT EXPRESS 3D</h1>
+        <p>You are trapped inside a 3D sleeper train coach.</p>
         <p>
-            • Walk through coaches <b>S-1 to S-8</b>.<br>
-            • <span class="rule">ANOMALY DETECTED? TURN AROUND & RETREAT TO PROGRESS.</span><br>
-            • <span class="rule">NO ANOMALY? KEEP MOVING FORWARD.</span><br>
-            • Making the wrong move collapses the timeline back to S-1.
+            • Inspect the corridor as you walk forward.<br>
+            • <span class="rule">IF YOU NOTICE AN ANOMALY: TURN 180° AND WALK BACK!</span><br>
+            • <span class="rule">IF EVERYTHING LOOKS NORMAL: CONTINUE FORWARD!</span>
         </p>
-        <p style="margin-top: 25px; font-size: 20px; color: #ff3333; animation: pulse 1.5s infinite;">[ CLICK TO ENTER 3D WORLD ]</p>
+        <p style="margin-top: 30px; font-size: 20px; color: #ff3333; animation: blink 1s infinite;">
+            [ CLICK TO ENTER 3D ENVIRONMENT ]
+        </p>
     </div>
 
     <div id="game-over">
-        <h1>TIMELINE COLLAPSED</h1>
-        <p>The temporal entity trapped you in the void.</p>
-        <button class="btn" onclick="location.reload()">Re-enter Loop</button>
+        <h1>CAUGHT BY THE ENTITY</h1>
+        <p>An anomaly went unnoticed. The loop resets.</p>
+        <button class="btn" onclick="location.reload()">Retry</button>
     </div>
 
     <div id="victory">
-        <h1>BLARA JUNCTION (1994)</h1>
-        <p>You survived the 4D temporal anomaly loop and stepped off the train.</p>
+        <h1>TERMINUS REACHED</h1>
+        <p>You successfully identified all anomalies and escaped.</p>
         <button class="btn" onclick="location.reload()">Play Again</button>
     </div>
 
