@@ -2,59 +2,61 @@ let scene, camera, renderer;
 let pitchObject, yawObject;
 let isLocked = false;
 
-// Controls
+// Input & Movement
 let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
 let prevTime = performance.now();
 const velocity = new THREE.Vector3();
 const direction = new THREE.Vector3();
 
-// Flashlight & Audio
+// Lights
 let flashlight, flashlightOn = true;
-let audioCtx;
+const coachLights = [];
 
-// Game State
+// Game Logic
 let currentCar = 1;
 const maxCars = 8;
 let hasAnomaly = false;
 let anomalyType = 0;
-let trainGroup, anomalyGroup;
+let anomalyGroup = null;
 
-// 4D Time Variables
-let clock = new THREE.Clock();
-let distortionMeshList = [];
-
-// UI
+// Canvas & UI
 const carNumberEl = document.getElementById('car-number');
-const anomalyDetectorEl = document.getElementById('anomaly-detector');
+const anomalyStatusEl = document.getElementById('anomaly-status');
 const instructions = document.getElementById('instructions');
 const gameOverEl = document.getElementById('game-over');
 const victoryEl = document.getElementById('victory');
 
 function init() {
+    // 3D Scene setup
     scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x020204, 0.08);
+    scene.fog = new THREE.FogExp2(0x040609, 0.08);
 
-    camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
+    // 3D Perspective Camera Setup
+    camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 100);
 
     pitchObject = new THREE.Object3D();
     pitchObject.add(camera);
+
     yawObject = new THREE.Object3D();
-    yawObject.position.set(0, 1.6, 9);
+    yawObject.position.set(0, 1.6, 10);
     yawObject.rotation.y = Math.PI;
     yawObject.add(pitchObject);
     scene.add(yawObject);
 
-    renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+    // WebGL Renderer
+    renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     document.getElementById('canvas-container').appendChild(renderer.domElement);
 
+    // Build World
     setupLighting();
-    buildDetailed3DTrain();
+    buildDetailedCoach();
     generateCarState();
 
+    // Controls
     setupPointerLock();
     document.addEventListener('keydown', onKeyDown);
     document.addEventListener('keyup', onKeyUp);
@@ -63,140 +65,94 @@ function init() {
     animate();
 }
 
-function initAudio() {
-    if (audioCtx) return;
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    
-    // Low train rumble
-    const bufferSize = audioCtx.sampleRate * 2;
-    const noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
-    const output = noiseBuffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) {
-        output[i] = Math.random() * 2 - 1;
-    }
-
-    const whiteNoise = audioCtx.createBufferSource();
-    whiteNoise.buffer = noiseBuffer;
-    whiteNoise.loop = true;
-
-    const filter = audioCtx.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.value = 100;
-
-    const gain = audioCtx.createGain();
-    gain.gain.value = 0.2;
-
-    whiteNoise.connect(filter);
-    filter.connect(gain);
-    gain.connect(audioCtx.destination);
-    whiteNoise.start();
-}
-
-function playClickSound() {
-    if (!audioCtx) return;
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.frequency.setValueAtTime(600, audioCtx.currentTime);
-    gain.gain.setValueAtTime(0.04, audioCtx.currentTime);
-    osc.connect(gain);
-    gain.connect(audioCtx.destination);
-    osc.start();
-    osc.stop(audioCtx.currentTime + 0.04);
-}
-
 function setupLighting() {
-    const ambientLight = new THREE.AmbientLight(0x0d1117, 0.3);
+    const ambientLight = new THREE.AmbientLight(0x0a0d14, 0.3);
     scene.add(ambientLight);
 
-    flashlight = new THREE.SpotLight(0xfffaed, 4, 20, Math.PI / 5, 0.4, 1);
+    flashlight = new THREE.SpotLight(0xfffaed, 6, 25, Math.PI / 5.5, 0.4, 1);
     flashlight.castShadow = true;
-    flashlight.shadow.mapSize.width = 1024;
-    flashlight.shadow.mapSize.height = 1024;
-    
     camera.add(flashlight);
-    flashlight.position.set(0, 0, 0.1);
+    flashlight.position.set(0.2, -0.2, 0);
     flashlight.target = camera;
     scene.add(camera);
 }
 
 function toggleFlashlight() {
     flashlightOn = !flashlightOn;
-    flashlight.intensity = flashlightOn ? 4 : 0;
-    playClickSound();
+    flashlight.intensity = flashlightOn ? 6 : 0;
 }
 
-function buildDetailed3DTrain() {
-    trainGroup = new THREE.Group();
+// Generates 3D structural details: floor tiles, walls, berths, windows, partitions
+function buildDetailedCoach() {
+    const coach = new THREE.Group();
 
-    // Textures & Materials
-    const floorMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.4, metalness: 0.2 });
-    const wallMat = new THREE.MeshStandardMaterial({ color: 0x1f2e3d, roughness: 0.7 });
-    const ceilingMat = new THREE.MeshStandardMaterial({ color: 0x2b2b2b, roughness: 0.9 });
-    const frameMat = new THREE.MeshStandardMaterial({ color: 0x0f0f0f, metalness: 0.8 });
-    const cushionMat = new THREE.MeshStandardMaterial({ color: 0x5a2a18, roughness: 0.8 });
-    const windowMat = new THREE.MeshStandardMaterial({ color: 0x050b14, roughness: 0.1, metalness: 0.9 });
+    // Procedural Textures & Materials
+    const floorMat = new THREE.MeshStandardMaterial({ color: 0x11161b, roughness: 0.3, metalness: 0.2 });
+    const wallMat = new THREE.MeshStandardMaterial({ color: 0x22303c, roughness: 0.6 });
+    const ceilingMat = new THREE.MeshStandardMaterial({ color: 0x181a1d, roughness: 0.8 });
+    const berthMat = new THREE.MeshStandardMaterial({ color: 0x4a1810, roughness: 0.7 });
+    const frameMat = new THREE.MeshStandardMaterial({ color: 0x080808, metalness: 0.9, roughness: 0.2 });
+    const windowMat = new THREE.MeshPhysicalMaterial({ color: 0x050a10, roughness: 0.1, transmission: 0.6, transparent: true });
 
-    // Floor
-    const floor = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.1, 24), floorMat);
+    // Floor & Ceiling
+    const floor = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.1, 26), floorMat);
     floor.position.y = -0.05;
     floor.receiveShadow = true;
-    trainGroup.add(floor);
+    coach.add(floor);
 
-    // Ceiling
-    const ceiling = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.1, 24), ceilingMat);
+    const ceiling = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.1, 26), ceilingMat);
     ceiling.position.y = 3.1;
-    trainGroup.add(ceiling);
+    coach.add(ceiling);
 
-    // Side Walls
-    const leftWall = new THREE.Mesh(new THREE.BoxGeometry(0.1, 3.2, 24), wallMat);
-    leftWall.position.set(-1.6, 1.55, 0);
-    trainGroup.add(leftWall);
+    // Walls
+    const leftWall = new THREE.Mesh(new THREE.BoxGeometry(0.1, 3.2, 26), wallMat);
+    leftWall.position.set(-1.8, 1.55, 0);
+    coach.add(leftWall);
 
-    const rightWall = new THREE.Mesh(new THREE.BoxGeometry(0.1, 3.2, 24), wallMat);
-    rightWall.position.set(1.6, 1.55, 0);
-    trainGroup.add(rightWall);
+    const rightWall = new THREE.Mesh(new THREE.BoxGeometry(0.1, 3.2, 26), wallMat);
+    rightWall.position.set(1.8, 1.55, 0);
+    coach.add(rightWall);
 
-    // Windows along corridor
-    for (let z = -9; z <= 9; z += 3) {
-        const win = new THREE.Mesh(new THREE.PlaneGeometry(0.01, 1.2), windowMat);
-        win.position.set(1.54, 1.8, z);
-        win.rotation.y = -Math.PI / 2;
-        trainGroup.add(win);
+    // Sleeper Cabins with Berths & Windows
+    for (let z = -10; z <= 10; z += 4) {
+        // Left Side Sleeper Berths (Lower, Middle, Upper)
+        for (let y of [0.5, 1.4, 2.3]) {
+            const berth = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.1, 2.2), berthMat);
+            berth.position.set(-1.1, y, z);
+            berth.castShadow = true;
+            berth.receiveShadow = true;
+            coach.add(berth);
+        }
+
+        // Support Steel Frames
+        const framePillar = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 2.8), frameMat);
+        framePillar.position.set(-0.5, 1.4, z + 1.0);
+        coach.add(framePillar);
+
+        // Windows along the hallway
+        const winLeft = new THREE.Mesh(new THREE.BoxGeometry(0.05, 1.0, 1.6), windowMat);
+        winLeft.position.set(-1.76, 1.6, z);
+        coach.add(winLeft);
+
+        const winRight = new THREE.Mesh(new THREE.BoxGeometry(0.05, 1.0, 1.6), windowMat);
+        winRight.position.set(1.76, 1.6, z);
+        coach.add(winRight);
     }
 
-    // 3D Sleeper Berths
-    for (let z = -8; z <= 8; z += 4) {
-        // Lower Berth
-        const berthLower = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.15, 2.2), cushionMat);
-        berthLower.position.set(-1.0, 0.5, z);
-        berthLower.castShadow = true;
-        trainGroup.add(berthLower);
+    // Overhead Yellow Lamps
+    for (let z = -9; z <= 9; z += 6) {
+        const fixture = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.04, 0.5), frameMat);
+        fixture.position.set(0, 3.05, z);
+        coach.add(fixture);
 
-        // Upper Berth
-        const berthUpper = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.12, 2.2), cushionMat);
-        berthUpper.position.set(-1.0, 2.0, z);
-        berthUpper.castShadow = true;
-        trainGroup.add(berthUpper);
-
-        // Support Frames
-        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 2.5), frameMat);
-        pole.position.set(-0.5, 1.25, z + 1.0);
-        trainGroup.add(pole);
-    }
-
-    // Ceiling Lights
-    for (let z = -8; z <= 8; z += 8) {
-        const lightFixture = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.05, 0.6), frameMat);
-        lightFixture.position.set(0, 3.05, z);
-        trainGroup.add(lightFixture);
-
-        const pLight = new THREE.PointLight(0xffaa55, 0.8, 7);
+        const pLight = new THREE.PointLight(0xffb042, 0.8, 7);
         pLight.position.set(0, 2.9, z);
         pLight.castShadow = true;
-        trainGroup.add(pLight);
+        coachLights.push(pLight);
+        coach.add(pLight);
     }
 
-    scene.add(trainGroup);
+    scene.add(coach);
 }
 
 function generateCarState() {
@@ -205,54 +161,51 @@ function generateCarState() {
         anomalyGroup = null;
     }
 
-    yawObject.position.set(0, 1.6, 9);
+    // Reset Coach Point Light Properties
+    coachLights.forEach(light => {
+        light.color.setHex(0xffb042);
+        light.intensity = 0.8;
+    });
+
+    yawObject.position.set(0, 1.6, 10);
     yawObject.rotation.y = Math.PI;
 
-    hasAnomaly = currentCar !== 1 && Math.random() < 0.55;
+    hasAnomaly = currentCar !== 1 && Math.random() < 0.5;
 
     if (hasAnomaly) {
-        anomalyType = Math.floor(Math.random() * 4); // 4D Anomalies
-        spawn4DAnomaly();
-        anomalyDetectorEl.innerText = "TEMPORAL SHIFT: ANOMALOUS DETECTED";
-        anomalyDetectorEl.style.color = "#ff3333";
+        anomalyType = Math.floor(Math.random() * 3);
+        spawn3DAnomaly();
+        anomalyStatusEl.innerText = "DETECTED";
+        anomalyStatusEl.style.color = "#ff3333";
     } else {
-        anomalyDetectorEl.innerText = "TEMPORAL SHIFT: STABLE";
-        anomalyDetectorEl.style.color = "#00ffcc";
+        anomalyStatusEl.innerText = "STABLE";
+        anomalyStatusEl.style.color = "#00ffcc";
     }
 
     carNumberEl.innerText = "S-" + currentCar;
 }
 
-function spawn4DAnomaly() {
+function spawn3DAnomaly() {
     anomalyGroup = new THREE.Group();
 
     if (anomalyType === 0) {
-        // Shadow Entity blocking hallway
-        const geo = new THREE.CylinderGeometry(0.35, 0.35, 1.8, 16);
-        const mat = new THREE.MeshBasicMaterial({ color: 0x000000 });
-        const shadowMan = new THREE.Mesh(geo, mat);
-        shadowMan.position.set(0, 0.9, -4);
-        anomalyGroup.add(shadowMan);
-
+        // Anomaly 1: Blood-Red Corridor Lighting
+        coachLights.forEach(light => {
+            light.color.setHex(0xff0000);
+            light.intensity = 2.0;
+        });
     } else if (anomalyType === 1) {
-        // Red Time Distortion Zone
-        const light = new THREE.PointLight(0xff0000, 5, 15);
-        light.position.set(0, 2, 0);
-        anomalyGroup.add(light);
-
+        // Anomaly 2: Monolithic Shadow Blocking Corridor
+        const shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+        const figure = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 2.0, 16), shadowMat);
+        figure.position.set(0, 1.0, -3);
+        anomalyGroup.add(figure);
     } else if (anomalyType === 2) {
-        // Gravity Distortion (Inverted sleeper berths floating)
-        const mat = new THREE.MeshStandardMaterial({ color: 0xff3333, wireframe: true });
-        const invertedBox = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.2, 2.5), mat);
-        invertedBox.position.set(0, 2.2, -2);
-        invertedBox.rotation.z = Math.PI / 3;
-        anomalyGroup.add(invertedBox);
-
-    } else if (anomalyType === 3) {
-        // Temporal Mirroring (Flickering Phantom Light)
-        const strobe = new THREE.SpotLight(0x00ffff, 8, 12, Math.PI / 4);
-        strobe.position.set(0, 2.8, -6);
-        anomalyGroup.add(strobe);
+        // Anomaly 3: Floating Wireframe Object
+        const mat = new THREE.MeshBasicMaterial({ color: 0x00ffcc, wireframe: true });
+        const anomalyObj = new THREE.Mesh(new THREE.IcosahedronGeometry(0.8, 1), mat);
+        anomalyObj.position.set(0, 1.6, -2);
+        anomalyGroup.add(anomalyObj);
     }
 
     scene.add(anomalyGroup);
@@ -261,8 +214,7 @@ function spawn4DAnomaly() {
 function checkPassage() {
     const zPos = yawObject.position.z;
 
-    // Walking to end of carriage (-Z)
-    if (zPos < -9.5) {
+    if (zPos < -10.5) {
         if (hasAnomaly) {
             triggerGameOver();
         } else {
@@ -270,15 +222,13 @@ function checkPassage() {
             if (currentCar > maxCars) triggerVictory();
             else generateCarState();
         }
-    } 
-    // Walking backward to entrance (+Z)
-    else if (zPos > 10.0 && currentCar > 1) {
+    } else if (zPos > 11.0 && currentCar > 1) {
         if (hasAnomaly) {
             currentCar++;
             if (currentCar > maxCars) triggerVictory();
             else generateCarState();
         } else {
-            currentCar = 1; // Reset loop if turned back when stable
+            currentCar = 1;
             generateCarState();
         }
     }
@@ -297,7 +247,6 @@ function triggerVictory() {
 function setupPointerLock() {
     instructions.addEventListener('click', () => {
         document.body.requestPointerLock();
-        initAudio();
     });
 
     document.addEventListener('pointerlockchange', () => {
@@ -311,12 +260,9 @@ function setupPointerLock() {
 
     document.addEventListener('mousemove', (e) => {
         if (!isLocked) return;
-        const movementX = e.movementX || 0;
-        const movementY = e.movementY || 0;
-
-        yawObject.rotation.y -= movementX * 0.0022;
-        pitchObject.rotation.x -= movementY * 0.0022;
-        pitchObject.rotation.x = Math.max(-Math.PI / 2.3, Math.min(Math.PI / 2.3, pitchObject.rotation.x));
+        yawObject.rotation.y -= (e.movementX || 0) * 0.0022;
+        pitchObject.rotation.x -= (e.movementY || 0) * 0.0022;
+        pitchObject.rotation.x = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, pitchObject.rotation.x));
     });
 }
 
@@ -350,7 +296,6 @@ function animate() {
 
     const time = performance.now();
     const delta = (time - prevTime) / 1000;
-    const elapsedTime = clock.getElapsedTime();
 
     if (isLocked) {
         velocity.x -= velocity.x * 10.0 * delta;
@@ -360,27 +305,18 @@ function animate() {
         direction.x = Number(moveRight) - Number(moveLeft);
         direction.normalize();
 
-        if (moveForward || moveBackward) velocity.z -= direction.z * 22.0 * delta;
-        if (moveLeft || moveRight) velocity.x -= direction.x * 22.0 * delta;
+        if (moveForward || moveBackward) velocity.z -= direction.z * 24.0 * delta;
+        if (moveLeft || moveRight) velocity.x -= direction.x * 24.0 * delta;
 
         yawObject.translateX(-velocity.x * delta);
         yawObject.translateZ(velocity.z * delta);
 
-        // Constrain movement inside hallway
-        yawObject.position.x = Math.max(-0.85, Math.min(0.85, yawObject.position.x));
+        // Constrain player movement within hallway walls
+        yawObject.position.x = Math.max(-0.7, Math.min(0.7, yawObject.position.x));
 
-        // 3D Head Bobbing Effect
+        // Subtle Camera Bobbing
         if (moveForward || moveBackward || moveLeft || moveRight) {
-            pitchObject.position.y = Math.sin(elapsedTime * 8) * 0.04;
-        }
-
-        // 4D Anomaly Temporal Animation
-        if (hasAnomaly && anomalyGroup) {
-            if (anomalyType === 2) {
-                anomalyGroup.rotation.y = elapsedTime * 0.5;
-            } else if (anomalyType === 3) {
-                anomalyGroup.children[0].intensity = Math.sin(elapsedTime * 15) * 5 + 4;
-            }
+            pitchObject.position.y = Math.sin(time * 0.009) * 0.03;
         }
 
         checkPassage();
@@ -391,3 +327,4 @@ function animate() {
 }
 
 window.onload = init;
+            
