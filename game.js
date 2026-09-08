@@ -2,66 +2,57 @@ let scene, camera, renderer;
 let pitchObject, yawObject;
 let isLocked = false;
 
-// Player Controls
+// Controls
 let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
 let prevTime = performance.now();
 const velocity = new THREE.Vector3();
 const direction = new THREE.Vector3();
 
-// Flashlight
+// Flashlight & Audio
 let flashlight, flashlightOn = true;
+let audioCtx;
 
-// Audio System (Web Audio API Synth)
-let audioCtx, ambientNoiseNode;
-
-// Interactive Notes
-let noteMesh = null, isNearNote = false, isReadingNote = false;
-const noteTexts = [
-    "Log 1: Coach S-2... The ambient noise feels heavier than before.",
-    "Log 2: If the passenger ahead turns into shadows, do not walk forward.",
-    "Log 3: Train timetable states Blara Junction was demolished in 1994...",
-    "Log 4: The track loop goes on forever unless you turn away from anomalies."
-];
-
-// Game State Progression
+// Game State
 let currentCar = 1;
 const maxCars = 8;
 let hasAnomaly = false;
 let anomalyType = 0;
-let anomalyObject = null;
+let trainGroup, anomalyGroup;
 
-// UI References
+// 4D Time Variables
+let clock = new THREE.Clock();
+let distortionMeshList = [];
+
+// UI
 const carNumberEl = document.getElementById('car-number');
+const anomalyDetectorEl = document.getElementById('anomaly-detector');
 const instructions = document.getElementById('instructions');
 const gameOverEl = document.getElementById('game-over');
 const victoryEl = document.getElementById('victory');
-const promptEl = document.getElementById('interaction-prompt');
-const noteModal = document.getElementById('note-modal');
-const noteTextEl = document.getElementById('note-text');
-
-const gltfLoader = new THREE.GLTFLoader();
 
 function init() {
     scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x050505, 0.12);
+    scene.fog = new THREE.FogExp2(0x020204, 0.08);
 
     camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
 
     pitchObject = new THREE.Object3D();
     pitchObject.add(camera);
     yawObject = new THREE.Object3D();
-    yawObject.position.y = 1.6;
+    yawObject.position.set(0, 1.6, 9);
+    yawObject.rotation.y = Math.PI;
     yawObject.add(pitchObject);
     scene.add(yawObject);
 
-    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
     renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     document.getElementById('canvas-container').appendChild(renderer.domElement);
 
     setupLighting();
-    loadTrainCorridor();
+    buildDetailed3DTrain();
     generateCarState();
 
     setupPointerLock();
@@ -76,7 +67,7 @@ function initAudio() {
     if (audioCtx) return;
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     
-    // Low frequency drone rumble for train noise
+    // Low train rumble
     const bufferSize = audioCtx.sampleRate * 2;
     const noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
     const output = noiseBuffer.getChannelData(0);
@@ -90,10 +81,10 @@ function initAudio() {
 
     const filter = audioCtx.createBiquadFilter();
     filter.type = 'lowpass';
-    filter.frequency.value = 120;
+    filter.frequency.value = 100;
 
     const gain = audioCtx.createGain();
-    gain.gain.value = 0.15;
+    gain.gain.value = 0.2;
 
     whiteNoise.connect(filter);
     filter.connect(gain);
@@ -101,24 +92,27 @@ function initAudio() {
     whiteNoise.start();
 }
 
-function playAudioClick() {
+function playClickSound() {
     if (!audioCtx) return;
     const osc = audioCtx.createOscillator();
     const gain = audioCtx.createGain();
-    osc.frequency.setValueAtTime(800, audioCtx.currentTime);
-    gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
+    osc.frequency.setValueAtTime(600, audioCtx.currentTime);
+    gain.gain.setValueAtTime(0.04, audioCtx.currentTime);
     osc.connect(gain);
     gain.connect(audioCtx.destination);
     osc.start();
-    osc.stop(audioCtx.currentTime + 0.05);
+    osc.stop(audioCtx.currentTime + 0.04);
 }
 
 function setupLighting() {
-    const ambientLight = new THREE.AmbientLight(0x0a0a1a, 0.2);
+    const ambientLight = new THREE.AmbientLight(0x0d1117, 0.3);
     scene.add(ambientLight);
 
-    flashlight = new THREE.SpotLight(0xffeedd, 3.5, 18, Math.PI / 6, 0.5, 1);
+    flashlight = new THREE.SpotLight(0xfffaed, 4, 20, Math.PI / 5, 0.4, 1);
     flashlight.castShadow = true;
+    flashlight.shadow.mapSize.width = 1024;
+    flashlight.shadow.mapSize.height = 1024;
+    
     camera.add(flashlight);
     flashlight.position.set(0, 0, 0.1);
     flashlight.target = camera;
@@ -127,185 +121,164 @@ function setupLighting() {
 
 function toggleFlashlight() {
     flashlightOn = !flashlightOn;
-    flashlight.intensity = flashlightOn ? 3.5 : 0;
-    playAudioClick();
+    flashlight.intensity = flashlightOn ? 4 : 0;
+    playClickSound();
 }
 
-function loadTrainCorridor() {
-    gltfLoader.load(
-        'train_corridor.glb', 
-        function (gltf) {
-            const trainModel = gltf.scene;
-            trainModel.scale.set(1, 1, 1);
-            trainModel.position.set(0, 0, 0);
+function buildDetailed3DTrain() {
+    trainGroup = new THREE.Group();
 
-            trainModel.traverse((child) => {
-                if (child.isMesh) {
-                    child.castShadow = true;
-                    child.receiveShadow = true;
-                }
-            });
+    // Textures & Materials
+    const floorMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.4, metalness: 0.2 });
+    const wallMat = new THREE.MeshStandardMaterial({ color: 0x1f2e3d, roughness: 0.7 });
+    const ceilingMat = new THREE.MeshStandardMaterial({ color: 0x2b2b2b, roughness: 0.9 });
+    const frameMat = new THREE.MeshStandardMaterial({ color: 0x0f0f0f, metalness: 0.8 });
+    const cushionMat = new THREE.MeshStandardMaterial({ color: 0x5a2a18, roughness: 0.8 });
+    const windowMat = new THREE.MeshStandardMaterial({ color: 0x050b14, roughness: 0.1, metalness: 0.9 });
 
-            scene.add(trainModel);
-        },
-        undefined,
-        function () {
-            buildProceduralTrain();
-        }
-    );
-}
-
-function buildProceduralTrain() {
-    const trainGroup = new THREE.Group();
-
-    const wallMat = new THREE.MeshStandardMaterial({ color: 0x1f3a4b, roughness: 0.8 });
-    const floorMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.5 });
-    const ceilingMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
-    const berthMat = new THREE.MeshStandardMaterial({ color: 0x4a2c11 });
-    const lightMat = new THREE.MeshBasicMaterial({ color: 0xffaa44 });
-
-    const floor = new THREE.Mesh(new THREE.BoxGeometry(3, 0.1, 20), floorMat);
+    // Floor
+    const floor = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.1, 24), floorMat);
     floor.position.y = -0.05;
+    floor.receiveShadow = true;
     trainGroup.add(floor);
 
-    const ceiling = new THREE.Mesh(new THREE.BoxGeometry(3, 0.1, 20), ceilingMat);
-    ceiling.position.y = 3;
+    // Ceiling
+    const ceiling = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.1, 24), ceilingMat);
+    ceiling.position.y = 3.1;
     trainGroup.add(ceiling);
 
-    const leftWall = new THREE.Mesh(new THREE.BoxGeometry(0.1, 3, 20), wallMat);
-    leftWall.position.set(-1.5, 1.5, 0);
+    // Side Walls
+    const leftWall = new THREE.Mesh(new THREE.BoxGeometry(0.1, 3.2, 24), wallMat);
+    leftWall.position.set(-1.6, 1.55, 0);
     trainGroup.add(leftWall);
 
-    const rightWall = new THREE.Mesh(new THREE.BoxGeometry(0.1, 3, 20), wallMat);
-    rightWall.position.set(1.5, 1.5, 0);
+    const rightWall = new THREE.Mesh(new THREE.BoxGeometry(0.1, 3.2, 24), wallMat);
+    rightWall.position.set(1.6, 1.55, 0);
     trainGroup.add(rightWall);
 
-    for (let z = -7; z <= 7; z += 3.5) {
-        const berthLower = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.1, 1.8), berthMat);
-        berthLower.position.set(-1.0, 0.5, z);
-        trainGroup.add(berthLower);
-
-        const berthUpper = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.1, 1.8), berthMat);
-        berthUpper.position.set(-1.0, 1.8, z);
-        trainGroup.add(berthUpper);
+    // Windows along corridor
+    for (let z = -9; z <= 9; z += 3) {
+        const win = new THREE.Mesh(new THREE.PlaneGeometry(0.01, 1.2), windowMat);
+        win.position.set(1.54, 1.8, z);
+        win.rotation.y = -Math.PI / 2;
+        trainGroup.add(win);
     }
 
-    for (let z = -6; z <= 6; z += 6) {
-        const lightMesh = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.05, 0.4), lightMat);
-        lightMesh.position.set(0, 2.95, z);
-        trainGroup.add(lightMesh);
+    // 3D Sleeper Berths
+    for (let z = -8; z <= 8; z += 4) {
+        // Lower Berth
+        const berthLower = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.15, 2.2), cushionMat);
+        berthLower.position.set(-1.0, 0.5, z);
+        berthLower.castShadow = true;
+        trainGroup.add(berthLower);
 
-        const pointLight = new THREE.PointLight(0xffaa44, 0.6, 8);
-        pointLight.position.set(0, 2.8, z);
-        trainGroup.add(pointLight);
+        // Upper Berth
+        const berthUpper = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.12, 2.2), cushionMat);
+        berthUpper.position.set(-1.0, 2.0, z);
+        berthUpper.castShadow = true;
+        trainGroup.add(berthUpper);
+
+        // Support Frames
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 2.5), frameMat);
+        pole.position.set(-0.5, 1.25, z + 1.0);
+        trainGroup.add(pole);
+    }
+
+    // Ceiling Lights
+    for (let z = -8; z <= 8; z += 8) {
+        const lightFixture = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.05, 0.6), frameMat);
+        lightFixture.position.set(0, 3.05, z);
+        trainGroup.add(lightFixture);
+
+        const pLight = new THREE.PointLight(0xffaa55, 0.8, 7);
+        pLight.position.set(0, 2.9, z);
+        pLight.castShadow = true;
+        trainGroup.add(pLight);
     }
 
     scene.add(trainGroup);
 }
 
-function spawnNote() {
-    if (noteMesh) scene.remove(noteMesh);
-    const paperGeo = new THREE.PlaneGeometry(0.3, 0.4);
-    const paperMat = new THREE.MeshBasicMaterial({ color: 0xfff8dc, side: THREE.DoubleSide });
-    noteMesh = new THREE.Mesh(paperGeo, paperMat);
-    noteMesh.position.set(-0.6, 0.56, 0);
-    noteMesh.rotation.x = -Math.PI / 2;
-    scene.add(noteMesh);
-}
-
 function generateCarState() {
-    if (anomalyObject) {
-        scene.remove(anomalyObject);
-        anomalyObject = null;
+    if (anomalyGroup) {
+        scene.remove(anomalyGroup);
+        anomalyGroup = null;
     }
 
     yawObject.position.set(0, 1.6, 9);
     yawObject.rotation.y = Math.PI;
 
-    hasAnomaly = currentCar !== 1 && Math.random() < 0.5;
+    hasAnomaly = currentCar !== 1 && Math.random() < 0.55;
 
     if (hasAnomaly) {
-        anomalyType = Math.floor(Math.random() * 4); // 4 Anomaly Types
-        spawnAnomaly();
+        anomalyType = Math.floor(Math.random() * 4); // 4D Anomalies
+        spawn4DAnomaly();
+        anomalyDetectorEl.innerText = "TEMPORAL SHIFT: ANOMALOUS DETECTED";
+        anomalyDetectorEl.style.color = "#ff3333";
+    } else {
+        anomalyDetectorEl.innerText = "TEMPORAL SHIFT: STABLE";
+        anomalyDetectorEl.style.color = "#00ffcc";
     }
 
-    spawnNote();
     carNumberEl.innerText = "S-" + currentCar;
 }
 
-function spawnAnomaly() {
-    anomalyObject = new THREE.Group();
+function spawn4DAnomaly() {
+    anomalyGroup = new THREE.Group();
 
     if (anomalyType === 0) {
-        const geo = new THREE.CylinderGeometry(0.3, 0.3, 1.8, 8);
+        // Shadow Entity blocking hallway
+        const geo = new THREE.CylinderGeometry(0.35, 0.35, 1.8, 16);
         const mat = new THREE.MeshBasicMaterial({ color: 0x000000 });
         const shadowMan = new THREE.Mesh(geo, mat);
-        shadowMan.position.set(0, 0.9, -6);
-        anomalyObject.add(shadowMan);
+        shadowMan.position.set(0, 0.9, -4);
+        anomalyGroup.add(shadowMan);
+
     } else if (anomalyType === 1) {
-        const redLight = new THREE.PointLight(0xff0000, 3, 15);
-        redLight.position.set(0, 2, 0);
-        anomalyObject.add(redLight);
+        // Red Time Distortion Zone
+        const light = new THREE.PointLight(0xff0000, 5, 15);
+        light.position.set(0, 2, 0);
+        anomalyGroup.add(light);
+
     } else if (anomalyType === 2) {
-        const berthMat = new THREE.MeshStandardMaterial({ color: 0xff0000 });
-        const floatingBerth = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.1, 1.8), berthMat);
-        floatingBerth.position.set(0, 2.2, 0);
-        floatingBerth.rotation.z = Math.PI / 4;
-        anomalyObject.add(floatingBerth);
+        // Gravity Distortion (Inverted sleeper berths floating)
+        const mat = new THREE.MeshStandardMaterial({ color: 0xff3333, wireframe: true });
+        const invertedBox = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.2, 2.5), mat);
+        invertedBox.position.set(0, 2.2, -2);
+        invertedBox.rotation.z = Math.PI / 3;
+        anomalyGroup.add(invertedBox);
+
     } else if (anomalyType === 3) {
-        // Anomaly 4: Flickering light intensity
-        const strobeLight = new THREE.PointLight(0xffffff, 5, 10);
-        strobeLight.position.set(0, 2, -3);
-        anomalyObject.add(strobeLight);
+        // Temporal Mirroring (Flickering Phantom Light)
+        const strobe = new THREE.SpotLight(0x00ffff, 8, 12, Math.PI / 4);
+        strobe.position.set(0, 2.8, -6);
+        anomalyGroup.add(strobe);
     }
 
-    scene.add(anomalyObject);
-}
-
-function checkNoteProximity() {
-    if (!noteMesh) return;
-    const dist = yawObject.position.distanceTo(noteMesh.position);
-    if (dist < 1.8) {
-        isNearNote = true;
-        promptEl.style.display = 'block';
-    } else {
-        isNearNote = false;
-        promptEl.style.display = 'none';
-    }
-}
-
-function toggleReadNote() {
-    if (!isNearNote && !isReadingNote) return;
-
-    isReadingNote = !isReadingNote;
-    if (isReadingNote) {
-        noteTextEl.innerText = noteTexts[currentCar % noteTexts.length];
-        noteModal.style.display = 'flex';
-        promptEl.style.display = 'none';
-    } else {
-        noteModal.style.display = 'none';
-    }
-    playAudioClick();
+    scene.add(anomalyGroup);
 }
 
 function checkPassage() {
     const zPos = yawObject.position.z;
 
-    if (zPos < -9) {
+    // Walking to end of carriage (-Z)
+    if (zPos < -9.5) {
         if (hasAnomaly) {
             triggerGameOver();
         } else {
             currentCar++;
-            if (currentCar > maxCars) triggerClimax();
+            if (currentCar > maxCars) triggerVictory();
             else generateCarState();
         }
-    } else if (zPos > 9.5 && currentCar > 1) {
+    } 
+    // Walking backward to entrance (+Z)
+    else if (zPos > 10.0 && currentCar > 1) {
         if (hasAnomaly) {
             currentCar++;
-            if (currentCar > maxCars) triggerClimax();
+            if (currentCar > maxCars) triggerVictory();
             else generateCarState();
         } else {
-            currentCar = 1;
+            currentCar = 1; // Reset loop if turned back when stable
             generateCarState();
         }
     }
@@ -316,7 +289,7 @@ function triggerGameOver() {
     gameOverEl.style.display = 'flex';
 }
 
-function triggerClimax() {
+function triggerVictory() {
     document.exitPointerLock();
     victoryEl.style.display = 'flex';
 }
@@ -337,13 +310,13 @@ function setupPointerLock() {
     });
 
     document.addEventListener('mousemove', (e) => {
-        if (!isLocked || isReadingNote) return;
+        if (!isLocked) return;
         const movementX = e.movementX || 0;
         const movementY = e.movementY || 0;
 
-        yawObject.rotation.y -= movementX * 0.002;
-        pitchObject.rotation.x -= movementY * 0.002;
-        pitchObject.rotation.x = Math.max(-Math.PI / 2.5, Math.min(Math.PI / 2.5, pitchObject.rotation.x));
+        yawObject.rotation.y -= movementX * 0.0022;
+        pitchObject.rotation.x -= movementY * 0.0022;
+        pitchObject.rotation.x = Math.max(-Math.PI / 2.3, Math.min(Math.PI / 2.3, pitchObject.rotation.x));
     });
 }
 
@@ -354,7 +327,6 @@ function onKeyDown(e) {
         case 'KeyA': case 'ArrowLeft': moveLeft = true; break;
         case 'KeyD': case 'ArrowRight': moveRight = true; break;
         case 'KeyF': toggleFlashlight(); break;
-        case 'KeyE': toggleReadNote(); break;
     }
 }
 
@@ -378,8 +350,9 @@ function animate() {
 
     const time = performance.now();
     const delta = (time - prevTime) / 1000;
+    const elapsedTime = clock.getElapsedTime();
 
-    if (isLocked && !isReadingNote) {
+    if (isLocked) {
         velocity.x -= velocity.x * 10.0 * delta;
         velocity.z -= velocity.z * 10.0 * delta;
 
@@ -387,19 +360,29 @@ function animate() {
         direction.x = Number(moveRight) - Number(moveLeft);
         direction.normalize();
 
-        if (moveForward || moveBackward) velocity.z -= direction.z * 25.0 * delta;
-        if (moveLeft || moveRight) velocity.x -= direction.x * 25.0 * delta;
+        if (moveForward || moveBackward) velocity.z -= direction.z * 22.0 * delta;
+        if (moveLeft || moveRight) velocity.x -= direction.x * 22.0 * delta;
 
         yawObject.translateX(-velocity.x * delta);
         yawObject.translateZ(velocity.z * delta);
 
-        yawObject.position.x = Math.max(-0.9, Math.min(0.9, yawObject.position.x));
+        // Constrain movement inside hallway
+        yawObject.position.x = Math.max(-0.85, Math.min(0.85, yawObject.position.x));
 
+        // 3D Head Bobbing Effect
         if (moveForward || moveBackward || moveLeft || moveRight) {
-            pitchObject.position.y = Math.sin(time * 0.01) * 0.05;
+            pitchObject.position.y = Math.sin(elapsedTime * 8) * 0.04;
         }
 
-        checkNoteProximity();
+        // 4D Anomaly Temporal Animation
+        if (hasAnomaly && anomalyGroup) {
+            if (anomalyType === 2) {
+                anomalyGroup.rotation.y = elapsedTime * 0.5;
+            } else if (anomalyType === 3) {
+                anomalyGroup.children[0].intensity = Math.sin(elapsedTime * 15) * 5 + 4;
+            }
+        }
+
         checkPassage();
     }
 
@@ -408,4 +391,3 @@ function animate() {
 }
 
 window.onload = init;
-                 
