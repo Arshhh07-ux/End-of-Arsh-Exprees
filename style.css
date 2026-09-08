@@ -1,0 +1,140 @@
+body, html {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background-color: #000;
+    font-family: 'Courier New', Courier, monospace;
+    user-select: none;
+}
+
+#canvas-container {
+    width: 100%;
+    height: 100%;
+}
+
+#crosshair {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 8px;
+    height: 8px;
+    background-color: rgba(255, 255, 255, 0.5);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    z-index: 5;
+}
+
+#hud {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    color: #ff3333;
+    font-size: 20px;
+    text-shadow: 0 0 5px #000;
+    pointer-events: none;
+    z-index: 5;
+}
+
+#interaction-prompt {
+    position: absolute;
+    bottom: 100px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #ffcc00;
+    font-size: 18px;
+    text-shadow: 0 0 8px #000;
+    display: none;
+    z-index: 5;
+}
+
+#note-modal {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.85);
+    display: none;
+    justify-content: center;
+    align-items: center;
+    z-index: 15;
+}
+
+#note-content {
+    background: #111;
+    border: 1px solid #ffcc00;
+    padding: 30px;
+    max-width: 450px;
+    color: #eee;
+    text-align: center;
+    box-shadow: 0 0 20px rgba(255, 204, 0, 0.2);
+}
+
+#instructions {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.9);
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    z-index: 10;
+}
+
+#instructions h1 {
+    color: #d9534f;
+    font-size: 48px;
+    margin-bottom: 10px;
+    text-shadow: 0 0 10px #ff0000;
+    letter-spacing: 2px;
+}
+
+#instructions p {
+    font-size: 18px;
+    line-height: 1.6;
+    max-width: 600px;
+    text-align: center;
+}
+
+.rule {
+    color: #ffcc00;
+    font-weight: bold;
+}
+
+#game-over, #victory {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: none;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    z-index: 20;
+}
+
+#game-over { background-color: #110000; color: #ff0000; }
+#victory { background-color: #000511; color: #00ffcc; }
+
+.btn {
+    margin-top: 20px;
+    padding: 12px 24px;
+    background: #222;
+    color: #fff;
+    border: 1px solid #555;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 16px;
+    transition: 0.2s;
+}
+.btn:hover { background: #444; border-color: #888; }
+
