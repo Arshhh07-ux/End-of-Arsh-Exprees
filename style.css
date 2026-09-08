@@ -1,3 +1,7 @@
+* {
+    box-sizing: border-box;
+}
+
 body, html {
     margin: 0;
     padding: 0;
@@ -5,22 +9,24 @@ body, html {
     height: 100%;
     overflow: hidden;
     background-color: #000;
-    font-family: 'Courier New', Courier, monospace;
+    font-family: 'Courier New', monospace;
     user-select: none;
 }
 
 #canvas-container {
     width: 100%;
     height: 100%;
+    display: block;
 }
 
 #crosshair {
     position: absolute;
     top: 50%;
     left: 50%;
-    width: 8px;
-    height: 8px;
-    background-color: rgba(255, 255, 255, 0.5);
+    width: 6px;
+    height: 6px;
+    background-color: rgba(255, 255, 255, 0.7);
+    border: 1px solid #000;
     border-radius: 50%;
     transform: translate(-50%, -50%);
     pointer-events: none;
@@ -32,20 +38,29 @@ body, html {
     top: 20px;
     left: 20px;
     color: #ff3333;
-    font-size: 20px;
-    text-shadow: 0 0 5px #000;
+    font-size: 18px;
+    font-weight: bold;
+    text-shadow: 0 0 8px rgba(0,0,0,0.9);
     pointer-events: none;
     z-index: 5;
+    line-height: 1.4;
+}
+
+#anomaly-detector {
+    font-size: 12px;
+    color: #00ffcc;
 }
 
 #interaction-prompt {
     position: absolute;
-    bottom: 100px;
+    bottom: 80px;
     left: 50%;
     transform: translateX(-50%);
     color: #ffcc00;
-    font-size: 18px;
-    text-shadow: 0 0 8px #000;
+    font-size: 16px;
+    background: rgba(0,0,0,0.7);
+    padding: 6px 16px;
+    border: 1px solid #ffcc00;
     display: none;
     z-index: 5;
 }
@@ -65,12 +80,12 @@ body, html {
 
 #note-content {
     background: #111;
-    border: 1px solid #ffcc00;
+    border: 1px solid #ff3333;
     padding: 30px;
     max-width: 450px;
     color: #eee;
     text-align: center;
-    box-shadow: 0 0 20px rgba(255, 204, 0, 0.2);
+    box-shadow: 0 0 25px rgba(255, 51, 51, 0.3);
 }
 
 #instructions {
@@ -79,7 +94,7 @@ body, html {
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0, 0, 0, 0.9);
+    background: #050505;
     color: #fff;
     display: flex;
     flex-direction: column;
@@ -90,17 +105,17 @@ body, html {
 }
 
 #instructions h1 {
-    color: #d9534f;
-    font-size: 48px;
+    color: #ff2222;
+    font-size: 42px;
     margin-bottom: 10px;
-    text-shadow: 0 0 10px #ff0000;
-    letter-spacing: 2px;
+    letter-spacing: 3px;
+    text-shadow: 0 0 15px #ff0000;
 }
 
 #instructions p {
-    font-size: 18px;
+    font-size: 16px;
     line-height: 1.6;
-    max-width: 600px;
+    max-width: 550px;
     text-align: center;
 }
 
@@ -122,19 +137,24 @@ body, html {
     z-index: 20;
 }
 
-#game-over { background-color: #110000; color: #ff0000; }
-#victory { background-color: #000511; color: #00ffcc; }
+#game-over { background: #0a0000; color: #ff2222; }
+#victory { background: #000a0e; color: #00ffcc; }
 
 .btn {
     margin-top: 20px;
-    padding: 12px 24px;
-    background: #222;
+    padding: 12px 28px;
+    background: #111;
     color: #fff;
-    border: 1px solid #555;
+    border: 1px solid #444;
     cursor: pointer;
     font-family: inherit;
     font-size: 16px;
     transition: 0.2s;
 }
-.btn:hover { background: #444; border-color: #888; }
+.btn:hover { background: #ff3333; color: #000; border-color: #ff3333; }
 
+@keyframes pulse {
+    0% { opacity: 0.6; }
+    50% { opacity: 1; }
+    100% { opacity: 0.6; }
+}
